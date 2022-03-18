@@ -197,22 +197,35 @@ initialState def =
           }
    in state
 
+menu :: [(Text, IO ())] -> IO ()
+menu choices = do
+  result_map <- forM (P.zip [1 ..] choices) $ \(i, (message, choice)) -> do
+    putStrLn $ show i <> ": " <> unpack message
+    return (i, choice)
+  readValue <- readMaybe <$> getLine 
+  case readValue of
+    Nothing -> menu choices
+    Just index -> case (L.lookup index result_map) of
+                    Nothing -> menu choices
+                    Just todo -> todo
 
+prepareAction :: GameDefinition -> GameState -> ActionName -> (Text, IO ())
+prepareAction def state a = (
+        fromJust $ message <$> M.lookup a (actions def),
+        do let (Just newState) = executeAction def state a
+           runGame def newState
+    )
 
-chooseAction :: GameDefinition -> GameState -> IO (Maybe ActionName)
+chooseAction :: GameDefinition -> GameState -> IO ()
 chooseAction def state = do
-  result_map <- forM (P.zip [1 ..] $ S.toList $ available_actions state) $ \(i, a) -> do
-    let (Just text) = message <$> M.lookup a (actions def)
-    putStrLn $ show i <> ": " <> unpack text
-    return (i, a)
-  (readMaybe >=> (`L.lookup` result_map)) <$> getLine
+  putStrLn "Choose an action"
+  let actions_for_menu = fmap (prepareAction def state) $ S.toList (available_actions state)
+      print_state = ("Print current game state", print state >> runGame def state) 
+      quit = ("Quit", return ())
+  menu (actions_for_menu ++ [print_state, quit])
 
 runGame :: GameDefinition -> GameState -> IO ()
-runGame def state = do
-  action <- chooseAction def state
-  let (Just newState) = executeAction def state =<< action
-  print newState
-  runGame def newState
+runGame def state = chooseAction def state
 
 main :: IO ()
 main = runGame simpleGame (initialState simpleGame)
