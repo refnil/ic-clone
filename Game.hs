@@ -38,7 +38,7 @@ data Condition
   = NoCondition
   | ActionCondition ActionName
 
-data Award = Award {runAward :: (GameState -> GameState)}
+newtype Award = Award {runAward :: GameState -> GameState}
 
 newtype Time = Time Float
   deriving (Show)
@@ -77,7 +77,7 @@ updateActionList :: GameDefinition -> GameState -> GameState
 updateActionList def state = state {available_actions = (available_actions state `S.union` computeAvailableActions def state) `S.difference` done_actions state}
 
 toSpeed :: Experience -> Float
-toSpeed exp = 1.05 ** (int2Float $ hardWorkLevel exp) * 1.01 ** (int2Float $ talentLevel exp)
+toSpeed exp = 1.05 ** int2Float (hardWorkLevel exp) * 1.01 ** int2Float (talentLevel exp)
 
 healthNeeded :: Time -> Time -> Life
 healthNeeded start duration = Life 0
@@ -112,8 +112,8 @@ passTimeDuringAction :: Action -> GameState -> (GameState, Alive)
 passTimeDuringAction action state =
   let skillsForAction = skillsUsed action
       allExperiences = current_skills state
-      experienceForSkills = fmap (\s -> fromMaybe 1 (toSpeed <$> s `M.lookup` allExperiences)) $ S.toList skillsForAction
-      multiplication = P.foldl (*) 1 experienceForSkills
+      experienceForSkills = (\s -> maybe 1 toSpeed (s `M.lookup` allExperiences)) <$> S.toList skillsForAction
+      multiplication = product experienceForSkills
       timeNeededForAction = Time (cost action / multiplication)
       (lifeTakenDuringAction, maybeTimeBeforeDeath) = computeLife timeNeededForAction (time state) (life state)
    in case maybeTimeBeforeDeath of
@@ -199,7 +199,7 @@ initialState def =
 chooseAction :: GameDefinition -> GameState -> IO ActionName
 chooseAction def state = do
   result_map <- forM (P.zip [1 ..] $ S.toList $ available_actions state) $ \(i, a) -> do
-    let (Just text) = message <$> (M.lookup a $ actions def)
+    let (Just text) = message <$> M.lookup a (actions def)
     putStrLn $ show i <> ": " <> unpack text
     return (i, a)
   guard (not $ L.null result_map)

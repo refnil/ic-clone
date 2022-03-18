@@ -7,5 +7,7 @@ pkgs.mkShell {
     pkgs.bashInteractive
     pkgs.ghc
     pkgs.ormolu
+    pkgs.hlint
+    pkgs.haskellPackages.apply-refact
   ];
 }
