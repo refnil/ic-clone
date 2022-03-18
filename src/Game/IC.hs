@@ -13,7 +13,15 @@ import GHC.Float
 import Text.Read
 import Prelude as P
 
-data Skill = SwordFight | BowFight
+data Skill = Sword |
+             Bow |
+             Axe |
+             Lance |
+             Fight |
+             Kata |
+             Walking |
+             Talking |
+             Manipulation
   deriving (Eq, Ord, Show)
 
 data Experience = Experience
@@ -55,6 +63,7 @@ data GameDefinition = GameDefinition
   { actions :: M.Map ActionName Action,
     initial_skills :: S.Set Skill
   }
+
 
 data GameState = GameState
   { current_skills :: M.Map Skill Experience,
@@ -176,10 +185,10 @@ simpleGame =
   GameDefinition
     { actions =
         M.fromList
-          [ (ActionName "Wake up" 0, Action (S.singleton SwordFight) "Open your eyes." NoCondition (Award id) 10),
-            (ActionName "Open door" 0, Action (S.singleton SwordFight) "Turn the handle." (ActionCondition (ActionName "Wake up" 0)) (Award id) 10)
+          [ (ActionName "Wake up" 0, Action (S.singleton Manipulation) "Open your eyes." NoCondition (Award id) 10),
+            (ActionName "Open door" 0, Action (S.singleton Manipulation) "Turn the handle." (ActionCondition (ActionName "Wake up" 0)) (Award id) 10)
           ],
-      initial_skills = S.singleton SwordFight
+      initial_skills = S.fromList [ Walking, Talking, Manipulation ]
     }
 
 initialState :: GameDefinition -> GameState
