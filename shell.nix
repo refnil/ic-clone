@@ -9,5 +9,7 @@ pkgs.mkShell {
     pkgs.ormolu
     pkgs.hlint
     pkgs.haskellPackages.apply-refact
+    pkgs.haskell-language-server
+    pkgs.cabal-install
   ];
 }
