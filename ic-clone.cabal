@@ -41,7 +41,13 @@ cabal-version:       >=1.10
 
 library ic-library
   -- Modules exported by the library.
-  exposed-modules:     Game.IC
+  exposed-modules:     Game.IC,
+                       Game.Action,
+                       Game.Base,
+                       Game.CLI,
+                       Game.Definition,
+                       Game.Skill,
+                       Game.State
 
   -- Modules included in this library but not exported.
   -- other-modules:
