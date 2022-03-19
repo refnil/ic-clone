@@ -34,7 +34,8 @@ data GameState = GameState
     life :: Life,
     max_life :: Life,
     init_life :: Life,
-    time :: Time
+    elapsedTime :: Time,
+    accumulatedTime :: Time
   }
   deriving (Show)
 
@@ -50,7 +51,8 @@ initialState def =
             life = 10,
             max_life = 10,
             init_life = 10,
-            time = 0
+            elapsedTime = 0,
+            accumulatedTime = 0
           }
    in state
 
@@ -63,7 +65,7 @@ resetGame = do
             done_actions = S.empty,
             life = init_life state,
             max_life = init_life state,
-            time = 0
+            elapsedTime = 0
           }
          )
   updateActionList
@@ -89,16 +91,17 @@ updateActionList = do
         ) 
 
 addSkillsExp :: Monad m => S.Set Skill -> Time -> GameMonadT m ()
-addSkillsExp skills (Time timePassed)  = modify ( \state -> 
+addSkillsExp skills timePassed  = modify ( \state -> 
   state {current_skills = M.mapWithKey updateSkill (current_skills state)})
   where
+    timePassedF = toSecondsF timePassed
     updateSkill skill exp
       | skill `S.member` skills =
         let speed = toSpeed exp
             newExp =
               exp
-                { hardWork = hardWork exp + speed * timePassed,
-                  talent = talent exp + speed * timePassed,
+                { hardWork = hardWork exp + speed * timePassedF,
+                  talent = talent exp + speed * timePassedF,
                   hardWorkLevel = floor . log $ hardWork newExp,
                   talentLevel = floor . log $ talent newExp
                 }
@@ -112,8 +115,8 @@ passTimeDuringAction action  = do
       allExperiences = current_skills state
       experienceForSkills = (\s -> maybe 1 toSpeed (s `M.lookup` allExperiences)) <$> S.toList skillsForAction
       multiplication = product experienceForSkills
-      timeNeededForAction = Time (cost action / multiplication)
-      (lifeTakenDuringAction, maybeTimeBeforeDeath) = computeLife timeNeededForAction (time state) (life state)
+      timeNeededForAction = secondsF (cost action / multiplication)
+      (lifeTakenDuringAction, maybeTimeBeforeDeath) = computeLife timeNeededForAction (elapsedTime state) (life state)
   case maybeTimeBeforeDeath of
         Just timeBeforeDeath -> do 
             addSkillsExp skillsForAction timeBeforeDeath
@@ -121,7 +124,8 @@ passTimeDuringAction action  = do
         Nothing -> do
           modify (\state -> state
                   { life = life state - lifeTakenDuringAction,
-                    time = time state + timeNeededForAction
+                    elapsedTime = elapsedTime state + timeNeededForAction,
+                    accumulatedTime = accumulatedTime state - timeNeededForAction
                   })
           addSkillsExp skillsForAction timeNeededForAction
           return True

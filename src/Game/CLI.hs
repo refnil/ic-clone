@@ -18,17 +18,15 @@ import Game.Base
 
 type GameMonadIO = GameMonadT IO
 
-menu :: MonadIO m => [(Text, m ())] -> m ()
-menu choices = do
+menu :: MonadIO m => [(Text, m ())] -> m () -> m ()
+menu choices whenInvalid = do
   result_map <- forM (P.zip [1 ..] choices) $ \(i, (message, choice)) -> do
     liftIO $ putStrLn $ show i <> ": " <> unpack message
     return (i, choice)
   readValue <- R.readMaybe <$> liftIO getLine
   case readValue of
-    Nothing -> menu choices
-    Just index -> case L.lookup index result_map of
-                    Nothing -> menu choices
-                    Just todo -> todo
+    Nothing -> whenInvalid
+    Just index -> fromMaybe whenInvalid (L.lookup index result_map)
 
 prepareAction :: ActionName -> GameMonadIO (Text, GameMonadIO ())
 prepareAction a = do
@@ -55,12 +53,12 @@ chooseAction = do
   let print_state = ("Print current game state", liftIO (print state) >> runGame) 
       die = ("Die", resetGame >> runGame)
       quit = ("Quit", return ())
-  menu (actions_for_menu ++ [print_state, die, quit])
+  menu (actions_for_menu ++ [print_state, die, quit]) runGame
 
 runGame :: GameMonadIO ()
 runGame = do
     state <- get
-    liftIO . putStrLn $ show (life state) <> " " <> show (time state)
+    liftIO . putStrLn $ show (life state) <> " " <> show (elapsedTime state)
     liftIO . putStrLn $ M.foldMapWithKey (\skill exp -> show skill <> "(" <> show (toSpeed exp) <> ") ") $ current_skills state
     chooseAction
 

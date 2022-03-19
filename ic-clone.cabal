@@ -59,7 +59,8 @@ library ic-library
   build-depends:       base >=4.14 && <4.15,
                        containers ,
                        text,
-                       mtl
+                       mtl,
+                       time
 
   -- Directories containing source files.
   hs-source-dirs:      src
