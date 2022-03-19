@@ -1,6 +1,7 @@
 module Game.State where
 
 import Control.Monad
+import Control.Monad.State
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -13,6 +14,7 @@ data GameDefinition = GameDefinition
   { actions :: M.Map ActionName Action,
     initial_skills :: S.Set Skill
   }
+  deriving Show
 
 instance Semigroup GameDefinition where
     (<>) def1 def2 = 
@@ -25,7 +27,8 @@ instance Monoid GameDefinition where
 
 
 data GameState = GameState
-  { current_skills :: M.Map Skill Experience,
+  { gameDefinition :: GameDefinition,
+    current_skills :: M.Map Skill Experience,
     available_actions :: S.Set ActionName,
     done_actions :: S.Set ActionName,
     life :: Life,
@@ -40,7 +43,8 @@ initialState def =
   let initial_actions = computeAvailableActions def state
       state =
         GameState
-          { current_skills = M.fromSet (\_ -> Experience 0 0 0 0) (initial_skills def),
+            { gameDefinition = def,
+            current_skills = M.fromSet (\_ -> Experience 0 0 0 0) (initial_skills def),
             available_actions = initial_actions,
             done_actions = S.empty,
             life = 10,
@@ -50,9 +54,11 @@ initialState def =
           }
    in state
 
-resetGame :: GameDefinition -> GameState -> GameState
-resetGame def state =
-  let new_available_actions = computeAvailableActions def newState
+resetGame :: Monad m => GameMonadT m ()
+resetGame = do
+  state <- get
+  let def = gameDefinition state
+      new_available_actions = computeAvailableActions def newState
       newState =
         state
           { current_skills = resetSkills $ current_skills state,
@@ -62,7 +68,10 @@ resetGame def state =
             max_life = init_life state,
             time = 0
           }
-   in newState
+  put newState
+   
+
+type GameMonadT = StateT GameState 
 
 setActionDone :: ActionName -> GameState -> GameState
 setActionDone action state =
@@ -112,17 +121,25 @@ passTimeDuringAction action state =
 resetSkills :: M.Map Skill Experience -> M.Map Skill Experience
 resetSkills = fmap resetExperience
 
-executeAction :: GameDefinition -> GameState -> ActionName -> Maybe GameState
-executeAction def state action =
-  if action `elem` available_actions state
-    then do
-      current_action <- M.lookup action (actions def)
-      let (new_state, alive) = passTimeDuringAction current_action state
-      pure $
-        if alive
-          then updateActionList def . setActionDone action $ new_state
-          else resetGame def new_state
-    else Nothing
+data ExecuteActionError = ActionNotAvailable | ActionUnknown
+    deriving Show
+
+executeAction :: Monad m => ActionName -> GameMonadT m (Maybe ExecuteActionError)
+executeAction action = do
+  state <- get
+  let def = gameDefinition state
+  case M.lookup action (actions def) of
+    Nothing -> return $ Just ActionUnknown
+    Just wantedAction -> do
+        if action `elem` available_actions state 
+           then do
+              let (new_state, alive) = passTimeDuringAction wantedAction state
+              if alive
+                then do put $ updateActionList def . setActionDone action $ new_state
+                        return Nothing
+                else do resetGame
+                        return Nothing
+            else return $ Just ActionNotAvailable
 
 computeAvailableActions :: GameDefinition -> GameState -> S.Set ActionName
 computeAvailableActions def state =

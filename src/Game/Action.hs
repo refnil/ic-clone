@@ -14,6 +14,7 @@ data Action = Action
     condition :: Condition,
     cost :: Float
   }
+  deriving Show
 
 data Condition
   = NoCondition
@@ -21,3 +22,4 @@ data Condition
   | OrCondition [Condition]
   | AndCondition [Condition]
   | NotCondition [Condition]
+    deriving Show

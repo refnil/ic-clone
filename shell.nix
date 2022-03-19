@@ -11,5 +11,6 @@ pkgs.mkShell {
     pkgs.haskellPackages.apply-refact
     pkgs.haskell-language-server
     pkgs.cabal-install
+    # pkgs.haskell.compiler.ghcjs
   ];
 }

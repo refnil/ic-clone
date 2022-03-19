@@ -2,56 +2,67 @@
 module Game.CLI where
 
 import Data.Text as T
-import Text.Read
+import qualified Text.Read as R
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Prelude as P
 import Data.List as L
 import Data.Maybe
 import Control.Monad
+import Control.Monad.State
+import Control.Monad.IO.Class
 
 import Game.State
 import Game.Action
 import Game.Base
 
-menu :: [(Text, IO ())] -> IO ()
+type GameMonadIO = GameMonadT IO
+
+menu :: MonadIO m => [(Text, m ())] -> m ()
 menu choices = do
   result_map <- forM (P.zip [1 ..] choices) $ \(i, (message, choice)) -> do
-    putStrLn $ show i <> ": " <> unpack message
+    liftIO $ putStrLn $ show i <> ": " <> unpack message
     return (i, choice)
-  readValue <- readMaybe <$> getLine 
+  readValue <- R.readMaybe <$> liftIO getLine
   case readValue of
     Nothing -> menu choices
     Just index -> case L.lookup index result_map of
                     Nothing -> menu choices
                     Just todo -> todo
 
-prepareAction :: GameDefinition -> GameState -> ActionName -> (Text, IO ())
-prepareAction def state a = (
+prepareAction :: ActionName -> GameMonadIO (Text, GameMonadIO ())
+prepareAction a = do
+    state <- get
+    let def = gameDefinition state
+    return (
         let (Just action) = M.lookup a (actions def)
             messageText = message action
             skillsText = "(" <> T.unwords (fmap (pack . show) $ S.toList $ skillsUsed action) <> ")"
             costText = pack . show . cost $ action
          in T.unwords [skillsText, messageText, costText],
-        do let (Just newState) = executeAction def state a
-           runGame def newState
-    )
+        do actionError <- executeAction a
+           case actionError of
+             Nothing -> return ()
+             Just error -> liftIO $ print error
+           runGame
+     )
 
-chooseAction :: GameDefinition -> GameState -> IO ()
-chooseAction def state = do
-  putStrLn "Choose an action:"
-  let actions_for_menu = prepareAction def state <$> S.toList (available_actions state)
-      print_state = ("Print current game state", print state >> runGame def state) 
-      die = ("Die", runGame def (resetGame def state))
+chooseAction :: GameMonadIO ()
+chooseAction = do
+  state <- get
+  liftIO $ putStrLn "Choose an action:"
+  actions_for_menu <- sequence $ prepareAction <$> S.toList (available_actions state)
+  let print_state = ("Print current game state", liftIO (print state) >> runGame) 
+      die = ("Die", resetGame >> runGame)
       quit = ("Quit", return ())
   menu (actions_for_menu ++ [print_state, die, quit])
 
-runGame :: GameDefinition -> GameState -> IO ()
-runGame def state = do
-    putStrLn $ show (life state) <> " " <> show (time state)
-    putStrLn $ M.foldMapWithKey (\skill exp -> show skill <> "(" <> show (toSpeed exp) <> ") ") $ current_skills state
-    chooseAction def state
-
+runGame :: GameMonadIO ()
+runGame = do
+    state <- get
+    liftIO . putStrLn $ show (life state) <> " " <> show (time state)
+    liftIO . putStrLn $ M.foldMapWithKey (\skill exp -> show skill <> "(" <> show (toSpeed exp) <> ") ") $ current_skills state
+    chooseAction
 
 runNewGame :: GameDefinition -> IO ()
-runNewGame def = runGame def (initialState def)
+runNewGame def = evalStateT runGame (initialState def)

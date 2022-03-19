@@ -56,7 +56,10 @@ library ic-library
   other-extensions:    DerivingStrategies, GeneralizedNewtypeDeriving, OverloadedStrings
 
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.14 && <4.15, containers , text
+  build-depends:       base >=4.14 && <4.15,
+                       containers ,
+                       text,
+                       mtl
 
   -- Directories containing source files.
   hs-source-dirs:      src
