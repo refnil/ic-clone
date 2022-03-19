@@ -1,8 +1,7 @@
 module Game.Action where
 
-import Data.Text
 import qualified Data.Set as S
-
+import Data.Text
 import Game.Skill
 
 data ActionName = ActionName Text Int
@@ -14,7 +13,7 @@ data Action = Action
     condition :: Condition,
     cost :: Float
   }
-  deriving Show
+  deriving (Show)
 
 data Condition
   = NoCondition
@@ -22,4 +21,4 @@ data Condition
   | OrCondition [Condition]
   | AndCondition [Condition]
   | NotCondition Condition
-    deriving Show
+  deriving (Show)

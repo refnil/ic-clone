@@ -1,10 +1,10 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Game.Base where
-    
+
 import qualified Data.Set as S
 import qualified Data.Time.Clock as C
-
 import GHC.Float
 
 newtype Time = Time C.DiffTime

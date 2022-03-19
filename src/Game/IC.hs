@@ -1,8 +1,8 @@
 module Game.IC where
 
 import Game.CLI
-import Game.State
 import Game.Definition
+import Game.State
 
 main :: IO ()
 main = runNewGame fullGame
