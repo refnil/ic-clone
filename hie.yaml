@@ -1,0 +1,7 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "ic-clone:lib:ic-library"
+
+    - path: "./Game.hs"
+      component: "ic-clone:exe:ic-clone"
