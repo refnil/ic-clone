@@ -14,6 +14,16 @@ data GameDefinition = GameDefinition
     initial_skills :: S.Set Skill
   }
 
+instance Semigroup GameDefinition where
+    (<>) def1 def2 = 
+        GameDefinition { actions = actions def1 <> actions def2,
+                         initial_skills = initial_skills def1 <> initial_skills def2
+                       }
+
+instance Monoid GameDefinition where
+    mempty = GameDefinition mempty mempty
+
+
 data GameState = GameState
   { current_skills :: M.Map Skill Experience,
     available_actions :: S.Set ActionName,

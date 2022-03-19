@@ -40,4 +40,4 @@ toSpeed :: Experience -> Float
 toSpeed exp = 1.05 ** int2Float (hardWorkLevel exp) * 1.01 ** int2Float (talentLevel exp)
 
 resetExperience :: Experience -> Experience
-resetExperience exp = exp {hardWork = 0, hardWorkLevel = 1}
+resetExperience exp = exp {hardWork = 0, hardWorkLevel = 0}

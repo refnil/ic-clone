@@ -5,4 +5,4 @@ import Game.State
 import Game.Definition
 
 main :: IO ()
-main = runGame simpleGame (initialState simpleGame)
+main = runNewGame fullGame

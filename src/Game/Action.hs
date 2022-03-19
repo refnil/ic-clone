@@ -18,3 +18,6 @@ data Action = Action
 data Condition
   = NoCondition
   | ActionCondition ActionName
+  | OrCondition [Condition]
+  | AndCondition [Condition]
+  | NotCondition [Condition]
