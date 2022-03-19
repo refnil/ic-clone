@@ -21,5 +21,5 @@ data Condition
   | ActionCondition ActionName
   | OrCondition [Condition]
   | AndCondition [Condition]
-  | NotCondition [Condition]
+  | NotCondition Condition
     deriving Show

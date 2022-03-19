@@ -40,7 +40,7 @@ data GameState = GameState
 
 initialState :: GameDefinition -> GameState
 initialState def =
-  let initial_actions = computeAvailableActions def state
+  let initial_actions = computeAvailableActions state
       state =
         GameState
             { gameDefinition = def,
@@ -56,36 +56,41 @@ initialState def =
 
 resetGame :: Monad m => GameMonadT m ()
 resetGame = do
-  state <- get
-  let def = gameDefinition state
-      new_available_actions = computeAvailableActions def newState
-      newState =
+  modify (\state -> 
         state
           { current_skills = resetSkills $ current_skills state,
-            available_actions = new_available_actions,
+            available_actions = mempty,
             done_actions = S.empty,
             life = init_life state,
             max_life = init_life state,
             time = 0
           }
-  put newState
+         )
+  updateActionList
    
 
 type GameMonadT = StateT GameState 
 
-setActionDone :: ActionName -> GameState -> GameState
-setActionDone action state =
+setActionDone :: Monad m => ActionName -> GameMonadT m ()
+setActionDone action = modify (\state -> 
   state
     { available_actions = S.delete action $ available_actions state,
       done_actions = S.insert action $ done_actions state
-    }
+    })
 
-updateActionList :: GameDefinition -> GameState -> GameState
-updateActionList def state = state {available_actions = (available_actions state `S.union` computeAvailableActions def state) `S.difference` done_actions state}
+updateActionList :: Monad m => GameMonadT m ()
+updateActionList = do
+    state <- get
+    let allFilteredActions = computeAvailableActions state
+    modify (\state -> state {
+        available_actions = 
+            allFilteredActions `S.difference` done_actions state
+        }
+        ) 
 
-addSkillsExp :: S.Set Skill -> Time -> GameState -> GameState
-addSkillsExp skills (Time timePassed) state =
-  state {current_skills = M.mapWithKey updateSkill (current_skills state)}
+addSkillsExp :: Monad m => S.Set Skill -> Time -> GameMonadT m ()
+addSkillsExp skills (Time timePassed)  = modify ( \state -> 
+  state {current_skills = M.mapWithKey updateSkill (current_skills state)})
   where
     updateSkill skill exp
       | skill `S.member` skills =
@@ -100,23 +105,26 @@ addSkillsExp skills (Time timePassed) state =
          in newExp
     updateSkill skill exp = exp
 
-passTimeDuringAction :: Action -> GameState -> (GameState, Alive)
-passTimeDuringAction action state =
+passTimeDuringAction :: Monad m => Action -> GameMonadT m Alive
+passTimeDuringAction action  = do
+  state <- get
   let skillsForAction = skillsUsed action
       allExperiences = current_skills state
       experienceForSkills = (\s -> maybe 1 toSpeed (s `M.lookup` allExperiences)) <$> S.toList skillsForAction
       multiplication = product experienceForSkills
       timeNeededForAction = Time (cost action / multiplication)
       (lifeTakenDuringAction, maybeTimeBeforeDeath) = computeLife timeNeededForAction (time state) (life state)
-   in case maybeTimeBeforeDeath of
-        Just timeBeforeDeath -> (addSkillsExp skillsForAction timeBeforeDeath state, False)
-        Nothing ->
-          let newState =
-                state
+  case maybeTimeBeforeDeath of
+        Just timeBeforeDeath -> do 
+            addSkillsExp skillsForAction timeBeforeDeath
+            return False
+        Nothing -> do
+          modify (\state -> state
                   { life = life state - lifeTakenDuringAction,
                     time = time state + timeNeededForAction
-                  }
-           in (addSkillsExp skillsForAction timeNeededForAction newState, True)
+                  })
+          addSkillsExp skillsForAction timeNeededForAction
+          return True
 
 resetSkills :: M.Map Skill Experience -> M.Map Skill Experience
 resetSkills = fmap resetExperience
@@ -133,20 +141,27 @@ executeAction action = do
     Just wantedAction -> do
         if action `elem` available_actions state 
            then do
-              let (new_state, alive) = passTimeDuringAction wantedAction state
+              alive <- passTimeDuringAction wantedAction
               if alive
-                then do put $ updateActionList def . setActionDone action $ new_state
+                then do setActionDone action
+                        updateActionList
                         return Nothing
                 else do resetGame
                         return Nothing
             else return $ Just ActionNotAvailable
 
-computeAvailableActions :: GameDefinition -> GameState -> S.Set ActionName
-computeAvailableActions def state =
-  let availableSkills = M.keysSet $ current_skills state
 
-      filterActions action | not (skillsUsed action `S.isSubsetOf` availableSkills) = False
-      filterActions action = case condition action of
-        NoCondition -> True
-        ActionCondition action_condition -> S.member action_condition (done_actions state)
-   in M.keysSet $ M.filter filterActions (actions def)
+checkActionCondition :: GameState -> Action -> Bool
+checkActionCondition state action | not (skillsUsed action `S.isSubsetOf` M.keysSet (current_skills state)) = False
+checkActionCondition state action = checkCondition state (condition action)
+
+checkCondition :: GameState -> Condition -> Bool
+checkCondition state NoCondition = True
+checkCondition state (ActionCondition name) = S.member name (done_actions state)
+checkCondition state (OrCondition conds) = any (checkCondition state) conds
+checkCondition state (AndCondition conds) = all (checkCondition state) conds
+checkCondition state (NotCondition cond) = not (checkCondition state cond)
+
+
+computeAvailableActions :: GameState -> S.Set ActionName
+computeAvailableActions state = M.keysSet $ M.filter (checkActionCondition state) (actions . gameDefinition $ state)
