@@ -26,15 +26,13 @@ getTimeSinceLastTime = do
     currentTime <- liftIO $ C.getCurrentTime
     lift $ state (\s -> (Time $ maybe 0 (C.diffUTCTime currentTime) (lastTime s), s { lastTime = Just currentTime }))
 
-menu :: MonadIO m => [(Text, m ())] -> m () -> m ()
+menu :: MonadIO m => [(String, Text, m a)] -> m a -> m a 
 menu choices whenInvalid = do
-  result_map <- forM (P.zip [1 ..] choices) $ \(i, (message, choice)) -> do
-    liftIO $ putStrLn $ show i <> ": " <> unpack message
-    return (i, choice)
-  readValue <- R.readMaybe <$> liftIO getLine
-  case readValue of
-    Nothing -> whenInvalid
-    Just index -> fromMaybe whenInvalid (L.lookup index result_map)
+  result_map <- forM choices $ \(key, message, choice) -> do
+    liftIO $ putStrLn $ key <> ": " <> unpack message
+    return (key, choice)
+  readValue <- liftIO getLine
+  fromMaybe whenInvalid (L.lookup readValue result_map)
 
 prepareAction :: ActionName -> GameMonadIO (Text, GameMonadIO ())
 prepareAction a = do
@@ -51,22 +49,27 @@ prepareAction a = do
         case actionError of
           Nothing -> return ()
           Just error -> liftIO $ print error
-        runGame
     )
 
 chooseAction :: GameMonadIO ()
 chooseAction = do
   state <- get
-  liftIO $ putStrLn "Choose an action:"
   canDoAction <- isAccumulatedTimePositive
-  actions_for_menu <- if canDoAction
-     then sequence $ prepareAction <$> S.toList (available_actions state)
-     else return []
-  let wait = ("Wait some time ", runGame)
-      print_state = ("Print current game state", liftIO (print state) >> runGame)
-      die = ("Die", resetGame >> runGame)
-      quit = ("Quit", return ())
-  menu (actions_for_menu ++ [wait, print_state, die, quit]) runGame
+  actionsToDo <- sequence $ prepareAction <$> S.toList (available_actions state)
+  let actionsForMenu = P.zipWith (\i (t,a) -> (show i, t, a >> return True)) [1..] actionsToDo
+
+      wait = ("w", "Wait some time ", return True)
+      print_state = ("p", "Print current game state", liftIO (print state) >> return True)
+      die = ("d", "Die", resetGame >> return True)
+      quit = ("q", "Quit", return False)
+      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, print_state, die, quit]
+  unless canDoAction $ liftIO $ do
+      putStrLn $ "Available actions in " <> show (negate $ accumulatedTime state)
+      forM_ actionsForMenu $ \(k, t, _) ->
+          putStrLn $ k <> ": " <> unpack t
+  liftIO $ putStrLn "Choose an action:"
+  continue <- menu menuChoices (return True)
+  when continue runGame
 
 runGame :: GameMonadIO ()
 runGame = do
