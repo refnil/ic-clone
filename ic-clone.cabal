@@ -60,7 +60,8 @@ library ic-library
                        containers ,
                        text,
                        mtl,
-                       time
+                       time,
+                       async
 
   -- Directories containing source files.
   hs-source-dirs:      src

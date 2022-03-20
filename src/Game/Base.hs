@@ -35,6 +35,11 @@ data Experience = Experience
 healthNeeded :: Time -> Time -> Life
 healthNeeded start duration = Life 0
 
+toSeconds :: Time -> Int
+toSeconds (Time diff) = 
+    let MkFixed integer = C.nominalDiffTimeToSeconds diff
+     in fromInteger integer `div` 1000000000000
+
 toSecondsF :: Time -> Float
 toSecondsF (Time diff) = 
     let MkFixed integer = C.nominalDiffTimeToSeconds diff

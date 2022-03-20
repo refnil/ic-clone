@@ -10,14 +10,22 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as S
 import Data.Text as T
+import Data.Function
 import Game.Action
 import Game.Base
 import Game.State
 import qualified Text.Read as R
 import Prelude as P
 import qualified Data.Time.Clock as C
+import Control.Concurrent.Async as A
+import Control.Concurrent
 
-data CLIState = CLIState { lastTime :: Maybe C.UTCTime }
+data AutoplayMode = SmallestCost
+
+data CLIState = CLIState { lastTime :: Maybe C.UTCTime,
+                           autoplayActivated :: Bool,
+                           autoplayMode :: AutoplayMode
+                         }
 
 type GameMonadIO = GameMonadT (StateT CLIState IO)
 
@@ -26,13 +34,13 @@ getTimeSinceLastTime = do
     currentTime <- liftIO $ C.getCurrentTime
     lift $ state (\s -> (Time $ maybe 0 (C.diffUTCTime currentTime) (lastTime s), s { lastTime = Just currentTime }))
 
-menu :: MonadIO m => [(String, Text, m a)] -> m a -> m a 
+menu :: [(String, Text, a)] -> a -> IO a
 menu choices whenInvalid = do
   result_map <- forM choices $ \(key, message, choice) -> do
-    liftIO $ putStrLn $ key <> ": " <> unpack message
+    putStrLn $ key <> ": " <> unpack message
     return (key, choice)
-  readValue <- liftIO getLine
-  fromMaybe whenInvalid (L.lookup readValue result_map)
+  readValue <- getLine
+  return $ fromMaybe whenInvalid (L.lookup readValue result_map)
 
 prepareAction :: ActionName -> GameMonadIO (Text, GameMonadIO ())
 prepareAction a = do
@@ -51,25 +59,72 @@ prepareAction a = do
           Just error -> liftIO $ print error
     )
 
+mkToggleAutoplayMenu :: GameMonadIO (String, Text, GameMonadIO Bool)
+mkToggleAutoplayMenu = do
+    activated <- lift $ gets autoplayActivated
+    let key = "t"
+        text = if activated 
+                  then "Disactivate autoplay"
+                  else "Activate autoplay"
+        toggle = lift $ modify (\s -> s { autoplayActivated = not $ autoplayActivated s }) >> return True
+    return (key, text, toggle)
+
+
+
 chooseAction :: GameMonadIO ()
 chooseAction = do
   state <- get
   canDoAction <- isAccumulatedTimePositive
   actionsToDo <- sequence $ prepareAction <$> S.toList (available_actions state)
+
+  toggleAutoplay <- mkToggleAutoplayMenu
   let actionsForMenu = P.zipWith (\i (t,a) -> (show i, t, a >> return True)) [1..] actionsToDo
 
       wait = ("w", "Wait some time ", return True)
       print_state = ("p", "Print current game state", liftIO (print state) >> return True)
       die = ("d", "Die", resetGame >> return True)
       quit = ("q", "Quit", return False)
-      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, print_state, die, quit]
+      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, die, print_state, quit]
   unless canDoAction $ liftIO $ do
       putStrLn $ "Available actions in " <> show (negate $ accumulatedTime state)
       forM_ actionsForMenu $ \(k, t, _) ->
           putStrLn $ k <> ": " <> unpack t
   liftIO $ putStrLn "Choose an action:"
-  continue <- menu menuChoices (return True)
-  when continue runGame
+  waitAutoplay <- prepareAutoplay
+  choiceOrAutoplay <- liftIO $ race (menu menuChoices (return True)) waitAutoplay
+  let nextStep = liftIO (putStrLn "") >> runGame
+  either (>>= flip when nextStep) (>> nextStep) choiceOrAutoplay
+
+findAutoplayAction :: AutoplayMode -> GameState -> Maybe ActionName
+findAutoplayAction SmallestCost state = 
+    let allActions = actions . gameDefinition $ state
+        currentActions = allActions `M.restrictKeys` (available_actions state)
+     in if M.null currentActions 
+           then Nothing
+           else Just . fst $ minimumBy (compare `on` (cost.snd)) (M.toList currentActions)
+
+chooseAutoplayAction :: GameMonadIO (Maybe ActionName)
+chooseAutoplayAction = do
+    activated <- lift $ gets autoplayActivated
+    mode <- lift $ gets autoplayMode
+    state <- get
+    pure $ guard activated >> findAutoplayAction mode state
+              
+
+prepareAutoplay :: GameMonadIO (IO (GameMonadIO ()))
+prepareAutoplay = do
+    maybeActionName <- chooseAutoplayAction
+    timeToWaitForAccTime <- gets (negate . toSeconds . accumulatedTime)
+    let timeToWait = if isJust maybeActionName 
+                        then max 1000000 (timeToWaitForAccTime * 1000000) 
+                        else maxBound
+    return $ do threadDelay timeToWait
+                return $ do 
+                    liftIO $ putStrLn "Autoplay"
+                    maybe (pure Nothing) executeAction maybeActionName
+                    return ()
+    
+
 
 runGame :: GameMonadIO ()
 runGame = do
@@ -81,7 +136,7 @@ runGame = do
   chooseAction
 
 initialCLIState :: CLIState
-initialCLIState = CLIState Nothing
+initialCLIState = CLIState Nothing False SmallestCost
 
 runNewGame :: GameDefinition -> IO ()
 runNewGame def = evalStateT (evalStateT runGame (initialState def)) initialCLIState
