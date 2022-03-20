@@ -6,13 +6,14 @@ module Game.Base where
 import qualified Data.Set as S
 import qualified Data.Time.Clock as C
 import GHC.Float
+import Data.Fixed
 
-newtype Time = Time C.DiffTime
+newtype Time = Time C.NominalDiffTime
   deriving (Show)
   deriving newtype (Eq, Ord, Num, Fractional)
 
 seconds :: Integer -> Time
-seconds = Time . C.secondsToDiffTime
+seconds = Time . fromInteger
 
 secondsF :: Float -> Time
 secondsF = realToFrac
@@ -35,7 +36,9 @@ healthNeeded :: Time -> Time -> Life
 healthNeeded start duration = Life 0
 
 toSecondsF :: Time -> Float
-toSecondsF (Time diff) = fromInteger (C.diffTimeToPicoseconds diff) / 10 ** 12
+toSecondsF (Time diff) = 
+    let MkFixed integer = C.nominalDiffTimeToSeconds diff
+     in (fromInteger integer) / (10 ** 12)
 
 computeLife :: Time -> Time -> Life -> (Life, Maybe Time)
 computeLife period start (Life currentLife) =

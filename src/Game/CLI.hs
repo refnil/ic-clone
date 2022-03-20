@@ -15,10 +15,16 @@ import Game.Base
 import Game.State
 import qualified Text.Read as R
 import Prelude as P
+import qualified Data.Time.Clock as C
 
-data CLIState = CLIState
+data CLIState = CLIState { lastTime :: Maybe C.UTCTime }
 
 type GameMonadIO = GameMonadT (StateT CLIState IO)
+
+getTimeSinceLastTime :: GameMonadIO Time
+getTimeSinceLastTime = do
+    currentTime <- liftIO $ C.getCurrentTime
+    lift $ state (\s -> (Time $ maybe 0 (C.diffUTCTime currentTime) (lastTime s), s { lastTime = Just currentTime }))
 
 menu :: MonadIO m => [(Text, m ())] -> m () -> m ()
 menu choices whenInvalid = do
@@ -52,21 +58,27 @@ chooseAction :: GameMonadIO ()
 chooseAction = do
   state <- get
   liftIO $ putStrLn "Choose an action:"
-  actions_for_menu <- sequence $ prepareAction <$> S.toList (available_actions state)
-  let print_state = ("Print current game state", liftIO (print state) >> runGame)
+  canDoAction <- isAccumulatedTimePositive
+  actions_for_menu <- if canDoAction
+     then sequence $ prepareAction <$> S.toList (available_actions state)
+     else return []
+  let wait = ("Wait some time ", runGame)
+      print_state = ("Print current game state", liftIO (print state) >> runGame)
       die = ("Die", resetGame >> runGame)
       quit = ("Quit", return ())
-  menu (actions_for_menu ++ [print_state, die, quit]) runGame
+  menu (actions_for_menu ++ [wait, print_state, die, quit]) runGame
 
 runGame :: GameMonadIO ()
 runGame = do
+  diffTime <- getTimeSinceLastTime
+  modify (\s -> s { accumulatedTime = accumulatedTime s + diffTime })
   state <- get
   liftIO . putStrLn $ show (life state) <> " " <> show (elapsedTime state)
   liftIO . putStrLn $ M.foldMapWithKey (\skill exp -> show skill <> "(" <> show (toSpeed exp) <> ") ") $ current_skills state
   chooseAction
 
 initialCLIState :: CLIState
-initialCLIState = CLIState
+initialCLIState = CLIState Nothing
 
 runNewGame :: GameDefinition -> IO ()
 runNewGame def = evalStateT (evalStateT runGame (initialState def)) initialCLIState

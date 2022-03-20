@@ -55,6 +55,11 @@ initialState def =
           }
    in state
 
+type GameMonadT = StateT GameState
+
+isAccumulatedTimePositive :: Monad m => GameMonadT m Bool
+isAccumulatedTimePositive = gets $ (>= 0) . accumulatedTime
+
 resetGame :: Monad m => GameMonadT m ()
 resetGame = do
   modify
@@ -69,8 +74,6 @@ resetGame = do
           }
     )
   updateActionList
-
-type GameMonadT = StateT GameState
 
 setActionDone :: Monad m => ActionName -> GameMonadT m ()
 setActionDone action =
