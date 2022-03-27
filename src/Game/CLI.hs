@@ -20,7 +20,8 @@ import qualified Data.Time.Clock as C
 import Control.Concurrent.Async as A
 import Control.Concurrent
 
-data AutoplayMode = SmallestCost
+data AutoplayMode = SmallestCost | LargestCost
+    deriving (Show, Enum, Bounded)
 
 data CLIState = CLIState { lastTime :: Maybe C.UTCTime,
                            autoplayActivated :: Bool,
@@ -69,7 +70,26 @@ mkToggleAutoplayMenu = do
         toggle = lift $ modify (\s -> s { autoplayActivated = not $ autoplayActivated s }) >> return True
     return (key, text, toggle)
 
+mkAutoplayModeMenu :: GameMonadIO (String, Text, GameMonadIO Bool)
+mkAutoplayModeMenu = do
+    mode <- lift $ gets autoplayMode
+    return (
+            "a",
+            "Change autoplay mode (current: " <> pack (show mode) <> ")",
+            changeAutoMode >> return True
+        )
+        
 
+changeAutoMode :: GameMonadIO ()
+changeAutoMode = do
+    liftIO $ do
+        putStrLn ""
+        putStrLn "Autoplay mode selection menu"
+        putStrLn "==========================="
+    join . liftIO $ menu (P.zipWith makeMenu [1..] [minBound..maxBound]) (return ())
+    where 
+        makeMenu :: Int -> AutoplayMode -> (String, Text, GameMonadIO ()) 
+        makeMenu index mode = (show index, pack (show mode), lift $ modify (\s -> s { autoplayMode = mode }))
 
 chooseAction :: GameMonadIO ()
 chooseAction = do
@@ -78,13 +98,15 @@ chooseAction = do
   actionsToDo <- sequence $ prepareAction <$> S.toList (available_actions state)
 
   toggleAutoplay <- mkToggleAutoplayMenu
+  autoplayModeMenu <- mkAutoplayModeMenu
   let actionsForMenu = P.zipWith (\i (t,a) -> (show i, t, a >> return True)) [1..] actionsToDo
 
       wait = ("w", "Wait some time ", return True)
       print_state = ("p", "Print current game state", liftIO (print state) >> return True)
       die = ("d", "Die", resetGame >> return True)
       quit = ("q", "Quit", return False)
-      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, die, print_state, quit]
+
+      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, autoplayModeMenu, die, print_state, quit]
   unless canDoAction $ liftIO $ do
       putStrLn $ "Available actions in " <> show (negate $ accumulatedTime state)
       forM_ actionsForMenu $ \(k, t, _) ->
@@ -102,6 +124,13 @@ findAutoplayAction SmallestCost state =
      in if M.null currentActions 
            then Nothing
            else Just . fst $ minimumBy (compare `on` (cost.snd)) (M.toList currentActions)
+
+findAutoplayAction LargestCost state = 
+    let allActions = actions . gameDefinition $ state
+        currentActions = allActions `M.restrictKeys` (available_actions state)
+     in if M.null currentActions 
+           then Nothing
+           else Just . fst $ maximumBy (compare `on` (cost.snd)) (M.toList currentActions)
 
 chooseAutoplayAction :: GameMonadIO (Maybe ActionName)
 chooseAutoplayAction = do
