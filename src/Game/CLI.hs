@@ -19,6 +19,7 @@ import Data.Aeson
 import Deriving.Aeson.Stock
 import Game.Action
 import Game.Base
+import qualified Text.Read as Read
 import Game.State
 import qualified Text.Read as R
 import Prelude as P
@@ -32,7 +33,8 @@ data AutoplayMode = SmallestCost | LargestCost
 
 data CLIState = CLIState { lastTime :: Maybe C.UTCTime,
                            autoplayActivated :: Bool,
-                           autoplayMode :: AutoplayMode
+                           autoplayMode :: AutoplayMode,
+                           debugAutoplay :: Bool
                          }
     deriving (Generic)
     deriving (FromJSON, ToJSON) via Snake CLIState
@@ -72,6 +74,16 @@ prepareAction a = do
           Just error -> liftIO $ print error
     )
 
+mkDebugAutoplayMenu :: GameMonadIO (String, Text, GameMonadIO Bool)
+mkDebugAutoplayMenu = do
+    activated <- lift $ gets debugAutoplay
+    let key = "x"
+        text = if activated 
+                  then "Stop debugging autoplay"
+                  else "Debug autoplay"
+        toggle = lift $ modify (\s -> s { debugAutoplay = not $ debugAutoplay s }) >> return True
+    return (key, text, toggle)
+
 mkToggleAutoplayMenu :: GameMonadIO (String, Text, GameMonadIO Bool)
 mkToggleAutoplayMenu = do
     activated <- lift $ gets autoplayActivated
@@ -103,6 +115,16 @@ changeAutoMode = do
         makeMenu :: Int -> AutoplayMode -> (String, Text, GameMonadIO ()) 
         makeMenu index mode = (show index, pack (show mode), lift $ modify (\s -> s { autoplayMode = mode }))
 
+
+addTimeDebug :: GameMonadIO Bool
+addTimeDebug = do
+    newTime <- liftIO $ do 
+        putStrLn "How much seconds to add?"
+        Read.readMaybe <$> getLine
+    maybe (return ()) (addTime . seconds) newTime
+    return True
+
+
 chooseAction :: GameMonadIO ()
 chooseAction = do
   state <- get
@@ -110,6 +132,7 @@ chooseAction = do
   actionsToDo <- sequence $ prepareAction <$> S.toList (available_actions state)
 
   toggleAutoplay <- mkToggleAutoplayMenu
+  debugAutoplay <- mkDebugAutoplayMenu
   autoplayModeMenu <- mkAutoplayModeMenu
   let actionsForMenu = P.zipWith (\i (t,a) -> (show i, t, a >> return True)) [1..] actionsToDo
 
@@ -117,8 +140,9 @@ chooseAction = do
       print_state = ("p", "Print current game state", liftIO (print state) >> return True)
       die = ("d", "Die", resetGame >> return True)
       quit = ("q", "Quit", return False)
+      addTime = ("y", "Add time", addTimeDebug)
 
-      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, autoplayModeMenu, die, print_state, quit]
+      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, autoplayModeMenu, addTime, debugAutoplay, die, print_state, quit]
   unless canDoAction $ liftIO $ do
       putStrLn $ "Available actions in " <> show (negate $ accumulatedTime state)
       forM_ actionsForMenu $ \(k, t, _) ->
@@ -159,23 +183,29 @@ prepareAutoplay = do
 
     timeToWaitForAccTime <- gets (negate . toSeconds . accumulatedTime)
     maybeAction <- join <$> sequence (getAction <$> maybeActionName)
+    isDebug <- lift $ gets debugAutoplay
+    
+    
     let asyncAction = case maybeAction of
             Nothing -> do
                 threadDelay maxBound
                 asyncAction
             Just action -> do
-                threadDelay $ max 1000000 (timeToWaitForAccTime * 1000000)
+                let minTime = if isDebug then 0 else 1000000
+                threadDelay $ max minTime (timeToWaitForAccTime * 1000000)
                 return $ do
                     liftIO $ putStrLn $ "Autoplay: " <> unpack (message action)
                     maybe undefined executeAction maybeActionName
                     return ()
     return asyncAction
 
+addTime :: Time -> GameMonadIO ()
+addTime time = modify (\s -> s { accumulatedTime = accumulatedTime s + time })
 
 runGame :: GameMonadIO ()
 runGame = do
   diffTime <- getTimeSinceLastTime
-  modify (\s -> s { accumulatedTime = accumulatedTime s + diffTime })
+  addTime diffTime
   saveGame
   state <- get
   liftIO . putStrLn $ show (life state) <> " " <> show (elapsedTime state)
@@ -183,7 +213,7 @@ runGame = do
   chooseAction
 
 initialCLIState :: CLIState
-initialCLIState = CLIState Nothing False SmallestCost
+initialCLIState = CLIState Nothing False SmallestCost False
 
 data SaveData = SaveData 
                 { saveState :: GameState
