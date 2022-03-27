@@ -1,13 +1,21 @@
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 module Game.State where
 
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Reader
+import GHC.Generics
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import Data.Aeson
 import Game.Action
 import Game.Base
 import Game.Skill
+import Deriving.Aeson.Stock
 
 data GameDefinition = GameDefinition
   { actions :: M.Map ActionName Action,
@@ -26,8 +34,7 @@ instance Monoid GameDefinition where
   mempty = GameDefinition mempty mempty
 
 data GameState = GameState
-  { gameDefinition :: GameDefinition,
-    current_skills :: M.Map Skill Experience,
+  { current_skills :: M.Map Skill Experience,
     available_actions :: S.Set ActionName,
     done_actions :: S.Set ActionName,
     life :: Life,
@@ -36,15 +43,15 @@ data GameState = GameState
     elapsedTime :: Time,
     accumulatedTime :: Time
   }
-  deriving (Show)
+  deriving (Show, Generic)
+  deriving (FromJSON, ToJSON) via Snake GameState
 
 initialState :: GameDefinition -> GameState
 initialState def =
-  let initial_actions = computeAvailableActions state
+  let initial_actions = computeAvailableActions def state
       state =
         GameState
-          { gameDefinition = def,
-            current_skills = M.fromSet (\_ -> Experience 0 0 0 0) (initial_skills def),
+          { current_skills = M.fromSet (\_ -> Experience 0 0 0 0) (initial_skills def),
             available_actions = initial_actions,
             done_actions = S.empty,
             life = 10,
@@ -55,12 +62,13 @@ initialState def =
           }
    in state
 
-type GameMonadT = StateT GameState
+type GameMonadT m = StateT GameState (ReaderT GameDefinition m)
+type GameMonad a = forall m. Monad m => GameMonadT m a
 
-isAccumulatedTimePositive :: Monad m => GameMonadT m Bool
+isAccumulatedTimePositive :: GameMonad Bool
 isAccumulatedTimePositive = gets $ (>= 0) . accumulatedTime
 
-resetGame :: Monad m => GameMonadT m ()
+resetGame :: GameMonad ()
 resetGame = do
   modify
     ( \state ->
@@ -75,7 +83,7 @@ resetGame = do
     )
   updateActionList
 
-setActionDone :: Monad m => ActionName -> GameMonadT m ()
+setActionDone :: ActionName -> GameMonad ()
 setActionDone action =
   modify
     ( \state ->
@@ -85,10 +93,11 @@ setActionDone action =
           }
     )
 
-updateActionList :: Monad m => GameMonadT m ()
+updateActionList :: GameMonad ()
 updateActionList = do
   state <- get
-  let allFilteredActions = computeAvailableActions state
+  def <- ask
+  let allFilteredActions = computeAvailableActions def state
   modify
     ( \state ->
         state
@@ -180,8 +189,8 @@ checkCondition state (OrCondition conds) = any (checkCondition state) conds
 checkCondition state (AndCondition conds) = all (checkCondition state) conds
 checkCondition state (NotCondition cond) = not (checkCondition state cond)
 
-computeAvailableActions :: GameState -> S.Set ActionName
-computeAvailableActions state = M.keysSet $ M.filter (checkActionCondition state) (actions . gameDefinition $ state)
+computeAvailableActions :: GameDefinition -> GameState -> S.Set ActionName
+computeAvailableActions def state = M.keysSet $ M.filter (checkActionCondition state) (actions def)
 
-getAction :: Monad m => ActionName -> GameMonadT m (Maybe Action)
-getAction name = gets (M.lookup name . actions . gameDefinition)
+getAction :: ActionName -> GameMonad (Maybe Action)
+getAction name = asks (M.lookup name . actions)

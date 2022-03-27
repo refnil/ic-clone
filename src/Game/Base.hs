@@ -1,5 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Game.Base where
 
@@ -7,10 +9,13 @@ import qualified Data.Set as S
 import qualified Data.Time.Clock as C
 import GHC.Float
 import Data.Fixed
+import GHC.Generics
+import Data.Aeson
+import Deriving.Aeson.Stock
 
 newtype Time = Time C.NominalDiffTime
   deriving (Show)
-  deriving newtype (Eq, Ord, Num, Fractional)
+  deriving newtype (Eq, Ord, Num, Fractional, FromJSON, ToJSON)
 
 seconds :: Integer -> Time
 seconds = Time . fromInteger
@@ -20,7 +25,7 @@ secondsF = realToFrac
 
 newtype Life = Life Float
   deriving (Show)
-  deriving newtype (Eq, Ord, Num)
+  deriving newtype (Eq, Ord, Num, FromJSON, ToJSON)
 
 type Alive = Bool
 
@@ -30,7 +35,8 @@ data Experience = Experience
     hardWorkLevel :: Int,
     talentLevel :: Int
   }
-  deriving (Show)
+  deriving (Show, Generic)
+  deriving (FromJSON, ToJSON) via Snake Experience
 
 healthNeeded :: Time -> Time -> Life
 healthNeeded start duration = Life 0

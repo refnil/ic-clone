@@ -5,4 +5,6 @@ import Game.Definition
 import Game.State
 
 main :: IO ()
-main = runNewGame fullGame
+main = do
+    saveData <- loadSave
+    maybe runNewGame runFromSave saveData fullGame

@@ -61,7 +61,9 @@ library ic-library
                        text,
                        mtl,
                        time,
-                       async
+                       async,
+                       aeson,
+                       deriving-aeson
 
   -- Directories containing source files.
   hs-source-dirs:      src

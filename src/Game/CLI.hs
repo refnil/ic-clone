@@ -1,16 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 
 module Game.CLI where
 
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.State
+import Control.Monad.Reader
 import Data.List as L
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as S
 import Data.Text as T
 import Data.Function
+import Data.Aeson
+import Deriving.Aeson.Stock
 import Game.Action
 import Game.Base
 import Game.State
@@ -21,14 +27,20 @@ import Control.Concurrent.Async as A
 import Control.Concurrent
 
 data AutoplayMode = SmallestCost | LargestCost
-    deriving (Show, Enum, Bounded)
+    deriving (Show, Enum, Bounded, Generic)
+    deriving (FromJSON, ToJSON) via Snake AutoplayMode
 
 data CLIState = CLIState { lastTime :: Maybe C.UTCTime,
                            autoplayActivated :: Bool,
                            autoplayMode :: AutoplayMode
                          }
+    deriving (Generic)
+    deriving (FromJSON, ToJSON) via Snake CLIState
 
 type GameMonadIO = GameMonadT (StateT CLIState IO)
+
+saveFilename :: String
+saveFilename = ".ic-clone.save.json"
 
 getTimeSinceLastTime :: GameMonadIO Time
 getTimeSinceLastTime = do
@@ -46,7 +58,7 @@ menu choices whenInvalid = do
 prepareAction :: ActionName -> GameMonadIO (Text, GameMonadIO ())
 prepareAction a = do
   state <- get
-  let def = gameDefinition state
+  def <- ask
   return
     ( let (Just action) = M.lookup a (actions def)
           messageText = message action
@@ -117,16 +129,16 @@ chooseAction = do
   let nextStep = liftIO (putStrLn "") >> runGame
   either (>>= flip when nextStep) (>> nextStep) choiceOrAutoplay
 
-findAutoplayAction :: AutoplayMode -> GameState -> Maybe ActionName
-findAutoplayAction SmallestCost state = 
-    let allActions = actions . gameDefinition $ state
+findAutoplayAction :: AutoplayMode -> GameDefinition -> GameState -> Maybe ActionName
+findAutoplayAction SmallestCost def state = 
+    let allActions = actions def
         currentActions = allActions `M.restrictKeys` (available_actions state)
      in if M.null currentActions 
            then Nothing
            else Just . fst $ minimumBy (compare `on` (cost.snd)) (M.toList currentActions)
 
-findAutoplayAction LargestCost state = 
-    let allActions = actions . gameDefinition $ state
+findAutoplayAction LargestCost def state = 
+    let allActions = actions def
         currentActions = allActions `M.restrictKeys` (available_actions state)
      in if M.null currentActions 
            then Nothing
@@ -137,7 +149,8 @@ chooseAutoplayAction = do
     activated <- lift $ gets autoplayActivated
     mode <- lift $ gets autoplayMode
     state <- get
-    pure $ guard activated >> findAutoplayAction mode state
+    def <- ask
+    pure $ guard activated >> findAutoplayAction mode def state
               
 
 prepareAutoplay :: GameMonadIO (IO (GameMonadIO ()))
@@ -163,6 +176,7 @@ runGame :: GameMonadIO ()
 runGame = do
   diffTime <- getTimeSinceLastTime
   modify (\s -> s { accumulatedTime = accumulatedTime s + diffTime })
+  saveGame
   state <- get
   liftIO . putStrLn $ show (life state) <> " " <> show (elapsedTime state)
   liftIO . putStrLn $ M.foldMapWithKey (\skill exp -> show skill <> "(" <> show (toSpeed exp) <> ") ") $ current_skills state
@@ -171,5 +185,29 @@ runGame = do
 initialCLIState :: CLIState
 initialCLIState = CLIState Nothing False SmallestCost
 
+data SaveData = SaveData 
+                { saveState :: GameState
+                , saveOption :: CLIState
+                }
+    deriving (Generic)
+    deriving (ToJSON, FromJSON) via Snake SaveData
+
+saveGame :: GameMonadIO ()
+saveGame = do
+    state <- get
+    option <- lift $ get
+    liftIO $ encodeFile saveFilename (SaveData state option)
+
+run :: GameDefinition -> GameState -> CLIState -> IO ()
+run def state = evalStateT (runReaderT (evalStateT runGame state) def)
+
 runNewGame :: GameDefinition -> IO ()
-runNewGame def = evalStateT (evalStateT runGame (initialState def)) initialCLIState
+runNewGame def = run def (initialState def) initialCLIState
+
+runFromSave :: SaveData -> GameDefinition -> IO ()
+runFromSave (SaveData state option) def = do
+    putStrLn "Loading save"
+    run def state option
+
+loadSave :: IO (Maybe SaveData)
+loadSave = decodeFileStrict saveFilename
