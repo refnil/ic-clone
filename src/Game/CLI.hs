@@ -143,16 +143,20 @@ chooseAutoplayAction = do
 prepareAutoplay :: GameMonadIO (IO (GameMonadIO ()))
 prepareAutoplay = do
     maybeActionName <- chooseAutoplayAction
+
     timeToWaitForAccTime <- gets (negate . toSeconds . accumulatedTime)
-    let timeToWait = if isJust maybeActionName 
-                        then max 1000000 (timeToWaitForAccTime * 1000000) 
-                        else maxBound
-    return $ do threadDelay timeToWait
-                return $ do 
-                    liftIO $ putStrLn "Autoplay"
-                    maybe (pure Nothing) executeAction maybeActionName
+    maybeAction <- join <$> sequence (getAction <$> maybeActionName)
+    let asyncAction = case maybeAction of
+            Nothing -> do
+                threadDelay maxBound
+                asyncAction
+            Just action -> do
+                threadDelay $ max 1000000 (timeToWaitForAccTime * 1000000)
+                return $ do
+                    liftIO $ putStrLn $ "Autoplay: " <> unpack (message action)
+                    maybe undefined executeAction maybeActionName
                     return ()
-    
+    return asyncAction
 
 
 runGame :: GameMonadIO ()

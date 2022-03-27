@@ -150,18 +150,18 @@ data ExecuteActionError = ActionNotAvailable | ActionUnknown
   deriving (Show)
 
 executeAction :: Monad m => ActionName -> GameMonadT m (Maybe ExecuteActionError)
-executeAction action = do
+executeAction name = do
   state <- get
-  let def = gameDefinition state
-  case M.lookup action (actions def) of
+  action <- getAction name
+  case action of
     Nothing -> return $ Just ActionUnknown
     Just wantedAction -> do
-      if action `elem` available_actions state
+      if name `elem` available_actions state
         then do
           alive <- passTimeDuringAction wantedAction
           if alive
             then do
-              setActionDone action
+              setActionDone name
               updateActionList
               return Nothing
             else do
@@ -182,3 +182,6 @@ checkCondition state (NotCondition cond) = not (checkCondition state cond)
 
 computeAvailableActions :: GameState -> S.Set ActionName
 computeAvailableActions state = M.keysSet $ M.filter (checkActionCondition state) (actions . gameDefinition $ state)
+
+getAction :: Monad m => ActionName -> GameMonadT m (Maybe Action)
+getAction name = gets (M.lookup name . actions . gameDefinition)
