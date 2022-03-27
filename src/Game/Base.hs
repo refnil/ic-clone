@@ -1,17 +1,17 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Game.Base where
 
+import Data.Aeson
+import Data.Fixed
 import qualified Data.Set as S
 import qualified Data.Time.Clock as C
-import GHC.Float
-import Data.Fixed
-import GHC.Generics
-import Data.Aeson
 import Deriving.Aeson.Stock
+import GHC.Float
+import GHC.Generics
 
 newtype Time = Time C.NominalDiffTime
   deriving (Show)
@@ -42,14 +42,14 @@ healthNeeded :: Time -> Time -> Life
 healthNeeded start duration = Life 0
 
 toSeconds :: Time -> Int
-toSeconds (Time diff) = 
-    let MkFixed integer = C.nominalDiffTimeToSeconds diff
-     in fromInteger integer `div` 1000000000000
+toSeconds (Time diff) =
+  let MkFixed integer = C.nominalDiffTimeToSeconds diff
+   in fromInteger integer `div` 1000000000000
 
 toSecondsF :: Time -> Float
-toSecondsF (Time diff) = 
-    let MkFixed integer = C.nominalDiffTimeToSeconds diff
-     in (fromInteger integer) / (10 ** 12)
+toSecondsF (Time diff) =
+  let MkFixed integer = C.nominalDiffTimeToSeconds diff
+   in (fromInteger integer) / (10 ** 12)
 
 computeLife :: Time -> Time -> Life -> (Life, Maybe Time)
 computeLife period start (Life currentLife) =

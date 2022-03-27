@@ -6,5 +6,5 @@ import Game.State
 
 main :: IO ()
 main = do
-    saveData <- loadSave
-    maybe runNewGame runFromSave saveData fullGame
+  saveData <- loadSave
+  maybe runNewGame runFromSave saveData fullGame

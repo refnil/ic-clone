@@ -1,13 +1,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+
 module Game.Action where
 
+import Data.Aeson
 import qualified Data.Set as S
 import Data.Text
-import Game.Skill
-import Data.Aeson
 import Deriving.Aeson.Stock
+import Game.Skill
 
 data ActionName = ActionName Text Int
   deriving (Eq, Ord, Show, Generic)

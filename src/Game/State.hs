@@ -1,21 +1,22 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE RankNTypes #-}
+
 module Game.State where
 
 import Control.Monad
-import Control.Monad.State
 import Control.Monad.Reader
-import GHC.Generics
+import Control.Monad.State
+import Data.Aeson
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-import Data.Aeson
+import Deriving.Aeson.Stock
+import GHC.Generics
 import Game.Action
 import Game.Base
 import Game.Skill
-import Deriving.Aeson.Stock
 
 data GameDefinition = GameDefinition
   { actions :: M.Map ActionName Action,
@@ -63,6 +64,7 @@ initialState def =
    in state
 
 type GameMonadT m = StateT GameState (ReaderT GameDefinition m)
+
 type GameMonad a = forall m. Monad m => GameMonadT m a
 
 isAccumulatedTimePositive :: GameMonad Bool
