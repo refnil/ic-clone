@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module Game.CLI where
 
@@ -78,11 +79,11 @@ prepareAction a = do
 mkDebugAutoplayMenu :: GameMonadIO (String, Text, GameMonadIO Bool)
 mkDebugAutoplayMenu = do
   activated <- lift $ gets debugAutoplay
-  let key = "x"
+  let key = "f"
       text =
         if activated
-          then "Stop debugging autoplay"
-          else "Debug autoplay"
+          then "Stop fast autoplay"
+          else "Enable fast autoplay"
       toggle = lift $ modify (\s -> s {debugAutoplay = not $ debugAutoplay s}) >> return True
   return (key, text, toggle)
 
@@ -125,6 +126,14 @@ addTimeDebug = do
   maybe (return ()) (addTime . seconds) newTime
   return True
 
+debugMenu :: (String, Text, GameMonadIO Bool)
+debugMenu = ("x", "Debug menu",) $ do
+    debugAutoplay <- mkDebugAutoplayMenu
+    liftIO $ do putStrLn ""
+                putStrLn "Debug menu"
+                putStrLn "=========="
+    join . liftIO $ menu [debugAutoplay] (return True)
+
 chooseAction :: GameMonadIO ()
 chooseAction = do
   state <- get
@@ -132,7 +141,6 @@ chooseAction = do
   actionsToDo <- sequence $ prepareAction <$> S.toList (available_actions state)
 
   toggleAutoplay <- mkToggleAutoplayMenu
-  debugAutoplay <- mkDebugAutoplayMenu
   autoplayModeMenu <- mkAutoplayModeMenu
   let actionsForMenu = P.zipWith (\i (t, a) -> (show i, t, a >> return True)) [1 ..] actionsToDo
 
@@ -142,7 +150,7 @@ chooseAction = do
       quit = ("q", "Quit", return False)
       addTime = ("y", "Add time", addTimeDebug)
 
-      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, autoplayModeMenu, addTime, debugAutoplay, die, print_state, quit]
+      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, autoplayModeMenu, addTime, debugMenu, die, print_state, quit]
   unless canDoAction $
     liftIO $ do
       putStrLn $ "Available actions in " <> show (negate $ accumulatedTime state)
@@ -178,24 +186,31 @@ chooseAutoplayAction = do
 
 prepareAutoplay :: GameMonadIO (IO (GameMonadIO ()))
 prepareAutoplay = do
-  maybeActionName <- chooseAutoplayAction
-
+  maybeName <- chooseAutoplayAction
   timeToWaitForAccTime <- gets (negate . toSeconds . accumulatedTime)
-  maybeAction <- join <$> sequence (getAction <$> maybeActionName)
   isDebug <- lift $ gets debugAutoplay
 
-  let asyncAction = case maybeAction of
-        Nothing -> do
-          threadDelay maxBound
-          asyncAction
-        Just action -> do
-          let minTime = if isDebug then 0 else 1000000
-          threadDelay $ max minTime (timeToWaitForAccTime * 1000000)
-          return $ do
-            liftIO $ putStrLn $ "Autoplay: " <> unpack (message action)
-            maybe undefined executeAction maybeActionName
-            return ()
-  return asyncAction
+  return (asyncAction maybeName timeToWaitForAccTime (if isDebug then 1000 else 1))
+      where asyncAction :: Maybe ActionName -> Int -> Int -> IO (GameMonadIO ())
+            asyncAction Nothing _ repeat = do
+              threadDelay maxBound
+              asyncAction Nothing 0 repeat
+            asyncAction (Just name) wait repeat = do
+              threadDelay $ max 1000000 (wait * 1000000)
+              return (runAutoplay name repeat)
+                where 
+                  runAutoplay _ 0 = return ()
+                  runAutoplay name repeat = do
+                    maybeAction <- getAction name
+                    liftIO $ putStrLn $ "Autoplay: " <> maybe "Unknown action" (unpack . message) maybeAction
+                    res <- executeAction name
+                    case res of
+                      (Just _) -> return ()
+                      Nothing -> do
+                        maybeName <- chooseAutoplayAction
+                        case maybeName of
+                          (Just nextName) -> runAutoplay nextName (repeat - 1)
+                          Nothing -> return ()
 
 addTime :: Time -> GameMonadIO ()
 addTime time = modify (\s -> s {accumulatedTime = accumulatedTime s + time})
