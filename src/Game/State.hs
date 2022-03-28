@@ -108,6 +108,10 @@ updateActionList = do
           }
     )
 
+talentLog, hardWorkLog :: Float -> Int
+talentLog = floor . logBase 1.5
+hardWorkLog = floor . logBase 1.5
+
 addSkillsExp :: Monad m => S.Set Skill -> Time -> GameMonadT m ()
 addSkillsExp skills timePassed =
   modify
@@ -123,8 +127,8 @@ addSkillsExp skills timePassed =
               exp
                 { hardWork = hardWork exp + speed * timePassedF,
                   talent = talent exp + speed * timePassedF,
-                  hardWorkLevel = floor . log $ hardWork newExp,
-                  talentLevel = floor . log $ talent newExp
+                  hardWorkLevel = hardWorkLog $ hardWork newExp,
+                  talentLevel = talentLog $ talent newExp
                 }
          in newExp
     updateSkill skill exp = exp
