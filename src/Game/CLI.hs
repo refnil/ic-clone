@@ -129,10 +129,28 @@ addTimeDebug = do
 debugMenu :: (String, Text, GameMonadIO Bool)
 debugMenu = ("x", "Debug menu",) $ do
     debugAutoplay <- mkDebugAutoplayMenu
+    currentTime <- gets accumulatedTime
+    let resetAccTime = ("a", "Reset acculated Time (" <> pack (show currentTime) <> ")", ) $ do
+            modify (\s -> s { accumulatedTime = 0 })
+            return True
+        
+        eraseGame = ("k", "Reset game (WARNING!)", ) $ do
+            def <- ask
+            put (initialState def)
+            lift $ put initialCLIState
+            return True
+            
+        addTime = ("y", "Add time", addTimeDebug)
+        die = ("d", "Die", resetGame >> return True)
+        print_state = ("p", "Print current game state", ) $ do
+            state <- get
+            liftIO (print state)
+            return True
+    
     liftIO $ do putStrLn ""
                 putStrLn "Debug menu"
                 putStrLn "=========="
-    join . liftIO $ menu [debugAutoplay] (return True)
+    join . liftIO $ menu [debugAutoplay, addTime, resetAccTime, print_state, die, eraseGame] (return True)
 
 chooseAction :: GameMonadIO ()
 chooseAction = do
@@ -144,13 +162,9 @@ chooseAction = do
   autoplayModeMenu <- mkAutoplayModeMenu
   let actionsForMenu = P.zipWith (\i (t, a) -> (show i, t, a >> return True)) [1 ..] actionsToDo
 
-      wait = ("w", "Wait some time ", return True)
-      print_state = ("p", "Print current game state", liftIO (print state) >> return True)
-      die = ("d", "Die", resetGame >> return True)
       quit = ("q", "Quit", return False)
-      addTime = ("y", "Add time", addTimeDebug)
 
-      menuChoices = (if canDoAction then actionsForMenu else []) ++ [wait, toggleAutoplay, autoplayModeMenu, addTime, debugMenu, die, print_state, quit]
+      menuChoices = (if canDoAction then actionsForMenu else []) ++ [toggleAutoplay, autoplayModeMenu, debugMenu, quit]
   unless canDoAction $
     liftIO $ do
       putStrLn $ "Available actions in " <> show (negate $ accumulatedTime state)
